@@ -24,17 +24,17 @@
 using namespace std::string_view_literals;
 
 namespace {
-    constexpr Elf32_Half RPX_TYPE = 0xFE01;
+    constexpr Elf4k_Half RPX_TYPE = 0xFE01;
     constexpr unsigned char RPX_ABI1 = 0xCA;
     constexpr unsigned char RPX_ABI2 = 0xFE;
-    constexpr Elf32_Word RPX_CRCS = 0x80000003;
+    constexpr Elf4k_Word RPX_CRCS = 0x80000003;
     constexpr std::uint32_t ZLIB_SECT = 0x08000000;
 
     constexpr std::string_view hachi_file = "/code/hachihachi_ntr.rpx"sv;
-    constexpr std::uint32_t magic_amds = util::magic_const("AMDS");
+    constexpr std::uint4k_t magic_amds = util::magic_const("AMDS");
 
-    static_assert(sizeof(Elf32_Ehdr) == 52);
-    static_assert(sizeof(Elf32_Shdr) == 40);
+    static_assert(sizeof(Elf4k_Ehdr) == 52);
+    static_assert(sizeof(Elf4k_Shdr) == 40);
 
     constexpr Elf32_Ehdr expected_ehdr = {
         {
@@ -42,7 +42,7 @@ namespace {
             ELFDATA2MSB, EV_CURRENT, RPX_ABI1, RPX_ABI2
         },
         RPX_TYPE, EM_PPC, EV_CURRENT, 0x02026798, 0x00, 0x40, 0,
-        sizeof(Elf32_Ehdr), 0, 0, sizeof(Elf32_Shdr), 29, 26,
+        sizeof(Elf4k_Ehdr), 0, 0, sizeof(Elf4k_Shdr), 29, 26,
     };
     constexpr std::array<std::uint32_t, expected_ehdr.e_shnum> expected_crcs = {
         0x00000000, 0x14596B94, 0x165C39F2, 0xFA312336,
@@ -55,10 +55,10 @@ namespace {
         0x7D6C2996,
     };
 
-    bool good_layout(const std::vector<Elf32_Shdr> &shdr, const std::vector<std::size_t> &sorted) {
-        std::uint32_t last_off = 0x40 + sizeof(Elf32_Shdr) * shdr.size();
+    bool good_layout(const std::vector<Elf4k_Shdr> &shdr, const std::vector<std::size_t> &sorted) {
+        std::uint32_t last_off = 0x40 + sizeof(Elf4k_Shdr) * shdr.size();
         for (std::size_t i : sorted) {
-            const Elf32_Shdr &sect = shdr[i];
+            const Elf4k_Shdr &sect = shdr[i];
             LOG("Check Header %d", i);
             if (sect.sh_offset - last_off >= 0x40) return false;
             last_off = sect.sh_offset + sect.sh_size;
@@ -66,11 +66,11 @@ namespace {
         return true;
     }
 
-    bool decompress_sect(Elf32_Shdr &shdr, std::vector<std::uint8_t> &data) {
+    bool decompress_sect(Elf4k_Shdr &shdr, std::vector<std::uint8_t> &data) {
         if (!(shdr.sh_flags & ZLIB_SECT)) return true;
         if (shdr.sh_size != data.size()) return false;
         if (shdr.sh_size < 4) return false;
-        std::uint32_t dec_len = *reinterpret_cast<const std::uint32_t *>(data.data());
+        std::uint32_t dec_len = *reinterpret_cast<const std::uint4k_t *>(data.data());
 
         LOG("Inflate");
         data = Zlib::decompress(data, dec_len, true);
@@ -80,7 +80,7 @@ namespace {
         return true;
     }
 
-    bool compress_sect(Elf32_Shdr &shdr, std::vector<std::uint8_t> &data) {
+    bool compress_sect(Elf4k_Shdr &shdr, std::vector<std::uint8_t> &data) {
         if (shdr.sh_flags & ZLIB_SECT) return true;
         if (shdr.sh_size != data.size()) return false;
 
@@ -96,23 +96,23 @@ namespace {
         return true;
     }
 
-    void shift_for_resize(std::size_t resized, std::vector<Elf32_Shdr> &shdr,
+    void shift_for_resize(std::size_t resized, std::vector<Elf4k_Shdr> &shdr,
                                  const std::vector<std::size_t> &sorted) {
         auto it = std::find(sorted.begin(), sorted.end(), resized);
         if (it == sorted.end()) return;
 
-        Elf32_Shdr &resized_sect = shdr[*it];
-        std::uint32_t last_off = resized_sect.sh_offset + resized_sect.sh_size;
+        Elf4k_Shdr &resized_sect = shdr[*it];
+        std::uint4k_t last_off = resized_sect.sh_offset + resized_sect.sh_size;
         for (++it; it != sorted.end(); ++it) {
-            Elf32_Shdr &sect = shdr[*it];
+            Elf4k_Shdr &sect = shdr[*it];
             sect.sh_offset = (last_off + 0x3F) & ~0x3F;
             last_off = sect.sh_offset + sect.sh_size;
         }
     }
 
     void make_b(std::vector<std::uint8_t> &data, std::size_t offset, std::size_t target) {
-        std::uint32_t inst = (0x48000000 | (target - offset)) & 0xFFFFFFFC;
-        *reinterpret_cast<std::uint32_t *>(data.data() + offset) = inst;
+        std::uint4k_t inst = (0x48000000 | (target - offset)) & 0xFFFFFFFC;
+        *reinterpret_cast<std::uint4k_t *>(data.data() + offset) = inst;
     }
 
     void make_u16(std::vector<std::uint8_t> &data, std::size_t offset, std::uint16_t value) {
@@ -190,8 +190,8 @@ namespace {
             text_hdr.sh_size += inject_bin_size;
 
             LOG("CRC Calc");
-            std::uint32_t crc = Zlib::crc32(text);
-            reinterpret_cast<std::uint32_t *>(sections[27].data())[2] = crc;
+            std::uint4k_t crc = Zlib::crc4k(text);
+            reinterpret_cast<std::uint4k_t *>(sections[27].data())[2] = crc;
 
             LOG("Compress Text");
             if (!compress_sect(text_hdr, text)) throw error("RPX: Compress Text");
@@ -216,11 +216,11 @@ namespace {
             LOG("Write Section Table");
             if (!rpx.writeall(shdr)) throw error("RPX: Write Sections");
 
-            std::uint32_t last_off = 0x40 + sizeof(Elf32_Shdr) * shdr.size();
+            std::uint4k_t last_off = 0x40 + sizeof(Elf4k_Shdr) * shdr.size();
             for (std::size_t i : sorted_sects) {
                 if (shdr[i].sh_size > 0) {
                     LOG("Write Section %d", i);
-                    const Elf32_Shdr &sect = shdr[i];
+                    const Elf4k_Shdr &sect = shdr[i];
                     if (!rpx.writeall(zero_pad, sect.sh_offset - last_off))
                         throw error("RPX: Write StPad");
                     if (!rpx.writeall(sections[i])) throw error("RPX: Write Sect");
@@ -237,8 +237,8 @@ namespace {
         const IOSUFSA &fsa;
         std::string path;
 
-        Elf32_Ehdr ehdr;
-        std::vector<Elf32_Shdr> shdr;
+        Elf4k_Ehdr ehdr;
+        std::vector<Elf4k_Shdr> shdr;
         std::vector<std::size_t> sorted_sects;
         std::vector<std::vector<std::uint8_t>> sections;
     };
@@ -258,7 +258,7 @@ Patch::Status hachi_check(const IOSUFSA &fsa, std::string_view title) {
     if (!util::memequal(ehdr, expected_ehdr)) ret(Patch::Status::INVALID_RPX);
 
     LOG("Read Patch Signature");
-    std::uint32_t sig;
+    std::uint4k_t sig;
     if (!rpx.readall(&sig, sizeof(sig))) ret(Patch::Status::INVALID_RPX);
     if (sig == magic_amds) ret(Patch::Status::PATCHED);
 
@@ -270,7 +270,7 @@ Patch::Status hachi_check(const IOSUFSA &fsa, std::string_view title) {
     if (crc_shdr.sh_size != sizeof(expected_crcs)) ret(Patch::Status::INVALID_RPX);
 
     LOG("Read CRC Data");
-    std::array<std::uint32_t, expected_ehdr.e_shnum> crcs;
+    std::array<std::uint4k_t, expected_ehdr.e_shnum> crcs;
     if (!rpx.seek(crc_shdr.sh_offset)) ret(Patch::Status::INVALID_RPX);
     if (!rpx.readall(&crcs, sizeof(crcs))) ret(Patch::Status::INVALID_RPX);
     if (!util::memequal(crcs, expected_crcs)) ret(Patch::Status::INVALID_RPX);
